@@ -35,7 +35,7 @@
   function load() { try { state = JSON.parse(localStorage.getItem(KEY)); } catch (e) { } if (!state || !state.results) state = { results: seedResults(), me: 'premier3', league: 'premier', exec: false }; }
   function save() { if (MODE === 'live') return; try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { } }
   load();
-  function leagueOf(id) { return L[id.replace(/\d+$/, '')]; }
+  function leagueOf(id) { if (!id) return null; return L[id.replace(/\d+$/, '')]; }
   function nameOf(id) { var l = leagueOf(id); return l ? l.names[id] : id; }
   function resultsFor(k) { return L[k].sched.map(function (m) { var r = state.results[m.id]; return r ? { home: m.home, away: m.away, winner: r.winner, status: r.status, at: r.at } : null; }).filter(Boolean); }
   function table(k) { return GPBL.standings(L[k].ids, resultsFor(k)); }
@@ -224,7 +224,7 @@
     else if (act === 'resolve') report(id, true);
     else if (MODE === 'live' && (act === 'confirm' || act === 'dispute')) liveDo('respond_result', { p_match: id, p_confirm: act === 'confirm' }, act === 'confirm' ? 'Confirmed. Standings updated.' : 'Sent to arbiters');
     else if (act === 'magic') { var em = (document.getElementById('email') || {}).value || ''; if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return toast('Enter a valid email'); a.disabled = true; LIVE.sendMagicLink(em.trim(), location.origin + location.pathname).then(function () { toast('Check your email for the sign-in link'); }, function (e) { a.disabled = false; toast('Could not send: ' + e.message); }); }
-    else if (act === 'signout') { LIVE.signOut().then(function () { ME = { role: 'anon' }; state.exec = false; render(); }); }
+    else if (act === 'signout') { LIVE.signOut().then(function () { ME = { role: 'anon' }; state.me = null; state.exec = false; render(); }); }
     else if (act === 'claim') { var pid = (document.getElementById('claimSel') || {}).value; if (pid) liveDo('request_claim', { p_player: pid }, 'Claim sent. An executive will approve it.'); }
     else if (act === 'decide') liveDo('exec_decide_claim', { p_claim: id, p_approve: a.dataset.ok === '1' }, a.dataset.ok === '1' ? 'Approved' : 'Rejected');
     else if (act === 'confirm') { state.results[id].status = 'confirmed'; save(); toast('Confirmed. Standings updated.'); render(); }
@@ -259,7 +259,7 @@
   function liveDo(fn, args, msg) { LIVE.rpc(fn, args).then(function () { toast(msg); return pull(true); }, function (e) { toast('Not saved: ' + e.message); }); }
   function pull(force) {
     return Promise.all([LIVE.loadResults(), LIVE.whoami()]).then(function (x) {
-      state.results = GPBL_LIVE.toResultMap(x[0]); ME = x[1] || { role: 'anon' }; setBanner();
+      state.results = GPBL_LIVE.toResultMap(x[0]); ME = x[1] || { role: 'anon' }; state.me = ME.player_id || null; setBanner();
       var busy = document.querySelector('.sheet') || (document.activeElement && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName));
       if (force || !busy) render();
     }, function (e) { console.warn('poll failed', e.message); });
@@ -286,7 +286,7 @@
       ME = await LIVE.whoami(); state.exec = false; MODE = 'live';
       if (ME.player_id) { state.me = ME.player_id; state.league = leagueOf(ME.player_id).key; }
       if (!L[state.league] || !L[state.league].ids.length) state.league = 'premier';
-      if (!leagueOf(state.me) || !leagueOf(state.me).names[state.me]) state.me = L.premier.ids[0];
+      if (!ME.player_id) state.me = null; // live + signed out: nobody is 'you'
     } catch (e) { console.warn('Live mode unavailable, using offline demo:', e.message); MODE = 'offline'; load(); }
     setBanner(); render(); if (a && a.error) toast('Sign-in failed: ' + a.error);
     if (MODE === 'live') POLL = setInterval(pull, CFG.POLL_MS || 20000);
